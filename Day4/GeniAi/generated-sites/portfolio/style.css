@@ -1,0 +1,130 @@
+/*!
+ * Portfolio Stylesheet
+ * Modern, responsive design for a Senior Software Developer portfolio
+ */
+
+/* Box-sizing and base */
+*, *::before, *::after { box-sizing: border-box; }
+html { font-size: 62.5%; } /* 1rem = 10px */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f9f9f9;
+    padding-top: 4rem;
+}
+
+/* Container */
+.container {
+    width: 90%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+}
+
+/* Header */
+header {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 2rem 0;
+    position: fixed;
+    width: 100%;
+    top: 0;
+    z-index: 100;
+}
+header .container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+header h1 {
+    margin: 0;
+    font-size: 2.4rem;
+}
+header p {
+    margin: 0;
+    font-size: 1.6rem;
+    color: #bdc3c7;
+}
+
+/* Sections */
+section {
+    padding: 8rem 0;
+}
+section h2 {
+    font-size: 2.8rem;
+    margin-bottom: 2rem;
+    text-align: center;
+    color: #2c3e50;
+}
+
+/* About */
+#about p {
+    max-width: 800px;
+    margin: 0 auto;
+    font-size: 1.6rem;
+}
+
+/* Projects Grid */
+.project-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+}
+.project-card {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    padding: 2rem;
+    transition: transform 0.3s ease;
+}
+.project-card:hover {
+    transform: translateY(-4px);
+}
+.project-card h3 {
+    margin-top: 0;
+    font-size: 2rem;
+    color: #2c3e50;
+}
+.project-card p {
+    font-size: 1.5rem;
+    color: #555;
+    margin-top: 0.5rem;
+}
+
+/* Contact */
+#contact p {
+    font-size: 1.6rem;
+    text-align: center;
+    margin: 0.5rem 0;
+}
+#contact a {
+    color: #3498db;
+    text-decoration: none;
+}
+#contact a:hover { text-decoration: underline; }
+
+/* Footer */
+footer {
+    background: #2c3e50;
+    color: #ecf0f1;
+    text-align: center;
+    padding: 2rem 0;
+    margin-top: 4rem;
+}
+footer p {
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    header .container { flex-direction: column; gap: 1rem; }
+    header h1 { font-size: 2rem; }
+    header p { font-size: 1.4rem; }
+    section { padding: 4rem 0; }
+    section h2 { font-size: 2.2rem; }
+    .project-grid { grid-template-columns: 1fr; }
+}

@@ -636,6 +636,23 @@ html, body {
   color: var(--text-secondary);
 }
 
+/* Streaming Cursor Animation */
+.streaming-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  background-color: var(--accent-primary);
+  margin-left: 4px;
+  vertical-align: -2px;
+  border-radius: 1px;
+  animation: cursorBlink 0.75s infinite ease-in-out;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 /* Code Snippet Styles */
 pre code {
   display: block;

@@ -27,6 +27,10 @@ const saveApiUrlBtn = document.getElementById('saveApiUrlBtn');
 const statusIndicator = document.getElementById('statusIndicator');
 const brandStatusText = document.getElementById('brandStatusText');
 
+// Convenience aliases matching user naming convention
+const messageInput = chatInput;
+const sendButton = sendBtn;
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   apiUrlInput.value = currentApiUrl;
@@ -126,82 +130,149 @@ function updateCharCounter() {
   charCount.textContent = `${len}/4000`;
 }
 
-// Handle sending user message
-async function handleUserSubmit() {
-  const text = chatInput.value.trim();
-  if (!text || isGenerating) return;
+// Typing indicator helpers
+function showTyping() {
+  typingIndicator.hidden = false;
+}
 
-  // Hide welcome banner once chat begins
-  welcomeBanner.style.display = 'none';
+function hideTyping() {
+  typingIndicator.hidden = true;
+}
 
-  // Add User Message
-  appendMessage({
-    sender: 'user',
-    text: text,
+// Add message helper compatible with user snippet
+function addMessage(sender, message = '') {
+  const role = (sender === 'assistant' || sender === 'bot') ? 'bot' : 'user';
+  return appendMessage({
+    sender: role,
+    text: message,
     timestamp: getCurrentTime()
   });
+}
 
-  // Clear & reset input
-  chatInput.value = '';
+// Send message with live stream consumption from backend
+async function sendMessage() {
+  const message = messageInput.value.trim();
+
+  if (!message || isGenerating) {
+    return;
+  }
+
+  // Hide welcome banner once chat begins
+  if (welcomeBanner) {
+    welcomeBanner.style.display = 'none';
+  }
+
+  addMessage("user", message);
+
+  messageInput.value = "";
   autoResizeInput();
   updateCharCounter();
+  messageInput.focus();
+
+  sendButton.disabled = true;
   setGenerating(true);
 
-  // Scroll to bottom
+  showTyping();
   scrollToBottom();
 
+  let assistantRow = null;
+  let assistantBubble = null;
+  let hasStartedStreaming = false;
+  let accumulatedText = "";
+
   try {
-    const responseText = await callChatApi(text);
-    appendMessage({
-      sender: 'bot',
-      text: responseText,
-      timestamp: getCurrentTime()
+    const response = await fetch(currentApiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=UTF-8"
+      },
+      body: message
     });
+
+    if (!response.ok) {
+      throw new Error(`Request failed (HTTP ${response.status}: ${response.statusText || 'Server error'})`);
+    }
+
+    if (!response.body) {
+      throw new Error("ReadableStream not supported on this response");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { value, done } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      const chunk = decoder.decode(value, {
+        stream: true
+      });
+
+      if (!hasStartedStreaming) {
+        hideTyping();
+
+        assistantRow = addMessage(
+          "assistant",
+          ""
+        );
+
+        assistantBubble =
+          assistantRow.querySelector(".message");
+
+        hasStartedStreaming = true;
+      }
+
+      accumulatedText += chunk;
+      assistantRow.dataset.rawText = accumulatedText;
+      assistantBubble.innerHTML = formatMessageContent(accumulatedText) + '<span class="streaming-cursor"></span>';
+
+      scrollToBottom();
+    }
+
+    // Process any lingering byte sequences
+    const leftover = decoder.decode();
+    if (leftover) {
+      accumulatedText += leftover;
+      if (assistantRow) assistantRow.dataset.rawText = accumulatedText;
+    }
+
+    // Clean up cursor when streaming concludes
+    if (assistantBubble) {
+      assistantBubble.innerHTML = formatMessageContent(accumulatedText);
+    }
+
     setApiStatus(true);
   } catch (error) {
-    console.error('Chat API Error:', error);
+    console.error("Chat streaming error:", error);
     setApiStatus(false);
 
-    appendErrorMessage(
-      `Could not communicate with Zaslon backend at <code>${escapeHtml(currentApiUrl)}</code>.<br>` +
-      `<small style="color: #cbd5e1;">${escapeHtml(error.message || 'Network connection failed')}</small>`,
-      text
-    );
+    if (!hasStartedStreaming) {
+      hideTyping();
+      appendErrorMessage(
+        `Could not communicate with Zaslon backend at <code>${escapeHtml(currentApiUrl)}</code>.<br>` +
+        `<small style="color: #cbd5e1;">${escapeHtml(error.message || 'Network connection failed')}</small>`,
+        message
+      );
+    } else if (assistantBubble) {
+      assistantBubble.innerHTML = formatMessageContent(accumulatedText) +
+        `<br><span style="color: #f87171; font-size: 0.8rem;">⚠️ Stream interrupted: ${escapeHtml(error.message)}</span>`;
+    }
   } finally {
+    hideTyping();
     setGenerating(false);
     scrollToBottom();
-    chatInput.focus();
+    messageInput.focus();
   }
 }
 
-// API Call implementation matching curl spec:
-// curl --location 'http://localhost:8080/api/chat' --data 'tell me a joke'
-async function callChatApi(prompt) {
-  const response = await fetch(currentApiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=UTF-8'
-    },
-    body: prompt
-  });
+// Alias handleUserSubmit to sendMessage for backwards compatibility
+const handleUserSubmit = sendMessage;
 
-  if (!response.ok) {
-    throw new Error(`HTTP Error ${response.status}: ${response.statusText || 'Server error'}`);
-  }
-
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.includes('application/json')) {
-    const json = await response.json();
-    // Handle standard JSON properties or return stringified
-    return json.response || json.message || json.content || json.text || JSON.stringify(json, null, 2);
-  } else {
-    // Default raw text response
-    return await response.text();
-  }
-}
-
-// Render normal message
-function appendMessage({ sender, text, timestamp }) {
+// Render normal message row and return the row element
+function appendMessage({ sender, text = '', timestamp = getCurrentTime() }) {
   const row = document.createElement('div');
   row.className = `message-row ${sender}`;
 
@@ -213,7 +284,8 @@ function appendMessage({ sender, text, timestamp }) {
   contentWrapper.className = 'message-content-wrapper';
 
   const bubble = document.createElement('div');
-  bubble.className = 'message-bubble';
+  // Includes 'message' and 'message-bubble' classes so querySelector('.message') works
+  bubble.className = 'message-bubble message';
   bubble.innerHTML = formatMessageContent(text);
 
   const meta = document.createElement('div');
@@ -229,10 +301,11 @@ function appendMessage({ sender, text, timestamp }) {
     </button>
   `;
 
-  // Attach copy handler
+  // Attach copy handler using dataset.rawText if dynamically updated
   const copyBtn = meta.querySelector('.copy-btn');
   copyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(text).then(() => {
+    const textToCopy = row.dataset.rawText !== undefined ? row.dataset.rawText : text;
+    navigator.clipboard.writeText(textToCopy).then(() => {
       copyBtn.querySelector('span').textContent = 'Copied!';
       setTimeout(() => {
         copyBtn.querySelector('span').textContent = 'Copy';
@@ -246,7 +319,10 @@ function appendMessage({ sender, text, timestamp }) {
   row.appendChild(avatar);
   row.appendChild(contentWrapper);
 
+  row.dataset.rawText = text;
   messagesList.appendChild(row);
+
+  return row;
 }
 
 // Render error message with retry & simulated response option
@@ -282,15 +358,10 @@ function appendErrorMessage(errorHtml, originalPrompt) {
     handleUserSubmit();
   });
 
-  // Demo simulated response button (for testing when backend is temporarily offline)
+  // Demo simulated response button (for testing streaming when backend is temporarily offline)
   bubble.querySelector('.demo-btn').addEventListener('click', () => {
     row.remove();
-    appendMessage({
-      sender: 'bot',
-      text: getSimulatedResponse(originalPrompt),
-      timestamp: getCurrentTime()
-    });
-    scrollToBottom();
+    streamSimulatedResponse(originalPrompt);
   });
 
   contentWrapper.appendChild(bubble);
@@ -362,6 +433,45 @@ function getSimulatedResponse(prompt) {
     return jokes[Math.floor(Math.random() * jokes.length)];
   }
   return `🍔 **Zaslon Customer Care**: I received your request: "${prompt}". When your backend is active at ${currentApiUrl}, live AI responses will appear here in real-time!`;
+}
+
+// Simulated stream generator for local UI demonstration
+function streamSimulatedResponse(prompt) {
+  const fullText = getSimulatedResponse(prompt);
+  if (welcomeBanner) {
+    welcomeBanner.style.display = 'none';
+  }
+  setGenerating(true);
+  showTyping();
+  scrollToBottom();
+
+  setTimeout(() => {
+    hideTyping();
+    const assistantRow = addMessage('assistant', '');
+    const assistantBubble = assistantRow.querySelector('.message');
+
+    let currentIdx = 0;
+    const chunkSize = 4;
+    let accumulated = '';
+
+    const timer = setInterval(() => {
+      if (currentIdx >= fullText.length) {
+        clearInterval(timer);
+        assistantBubble.innerHTML = formatMessageContent(accumulated);
+        assistantRow.dataset.rawText = accumulated;
+        setGenerating(false);
+        messageInput.focus();
+        scrollToBottom();
+        return;
+      }
+
+      accumulated += fullText.slice(currentIdx, currentIdx + chunkSize);
+      currentIdx += chunkSize;
+      assistantRow.dataset.rawText = accumulated;
+      assistantBubble.innerHTML = formatMessageContent(accumulated) + '<span class="streaming-cursor"></span>';
+      scrollToBottom();
+    }, 20);
+  }, 350);
 }
 
 // Utility: HTML Escaping
